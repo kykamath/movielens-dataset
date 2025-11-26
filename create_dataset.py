@@ -1,0 +1,5 @@
+"Here is the sample of first few rows in ml-32m/movies.csv dataset. Read it and create a hugging face dataset "movieId,title,genres
+1,Toy Story (1995),Adventure|Animation|Children|Comedy|Fantasy
+2,Jumanji (1995),Adventure|Children|Fantasy
+3,Grumpier Old Men (1995),Comedy|Romance
+4,Waiting to Exhale (1995),Comedy|Drama|Romance""
