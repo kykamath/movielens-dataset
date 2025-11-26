@@ -213,3 +213,4 @@ mini_gpt.iml
 .venv/
 .idea/
 ml-32m/
+.env

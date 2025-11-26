@@ -1,3 +1,5 @@
 datasets
 torch
 transformers
+openai
+python-dotenv
