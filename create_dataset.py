@@ -1,5 +1,6 @@
 import pandas as pd
 from datasets import Dataset
+from huggingface_hub import login
 
 def load_movies_dataset(csv_path: str = "ml-32m/movies.csv") -> Dataset:
     """
@@ -37,6 +38,7 @@ def push_dataset_to_hub(dataset: Dataset, repo_id: str, private: bool = False) -
 
 
 if __name__ == "__main__":
+    login()
     HUB_DATASET_REPO_ID = "krishnakamath/movielens-32m-movies"
 
     # Load and display the dataset
