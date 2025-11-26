@@ -13,7 +13,7 @@ This enriched dataset is ideal for tasks that require more than just basic movie
 
 ## Dataset Structure
 
-The dataset is provided in JSONL format (`movies_with_details.jsonl`). Each line in the file is a JSON object representing a single movie.
+The enriched dataset is available in [krishnakamath/movielens-32m-enriched](https://huggingface.co/krishnakamath/movielens-32m-enriched).
 
 ### Data Fields
 
