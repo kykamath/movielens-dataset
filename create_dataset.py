@@ -37,12 +37,14 @@ def push_dataset_to_hub(dataset: Dataset, repo_id: str, private: bool = False) -
 
 
 if __name__ == "__main__":
+    HUB_DATASET_REPO_ID = "krishnakamath/movielens-32m-movies"
+
     # Load and display the dataset
-    dataset = load_movies_dataset("movies.csv")
+    dataset = load_movies_dataset("ml-32m/movies.csv")
     print(f"Dataset loaded with {len(dataset)} movies")
     print(f"Columns: {dataset.column_names}")
     print("\nFirst few rows:")
     print(dataset.to_pandas().head())
     
     # Push to Hugging Face Hub (uncomment and set repo_id to use)
-    # push_dataset_to_hub(dataset, repo_id="your_username/movies", private=False)
+    push_dataset_to_hub(dataset, repo_id=HUB_DATASET_REPO_ID, private=False)
