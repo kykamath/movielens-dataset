@@ -165,7 +165,7 @@ if __name__ == "__main__":
     # Name of the dataset on Hugging Face Hub.
     HUB_ENRICHED_REPO_ID = "krishnakamath/movielens-32m-movies-enriched"
     # Total number of movies we want to process in this crawl.
-    MOVIES_TO_PROCESS = 500
+    MOVIES_TO_PROCESS = 100
     # Number of movies we want to enrich in a single OpenAI API call.
     BATCH_SIZE = 10
 

@@ -13,7 +13,7 @@ This enriched dataset is ideal for tasks that require more than just basic movie
 
 ## Dataset Structure
 
-The enriched dataset is available in [krishnakamath/movielens-32m-enriched](https://huggingface.co/krishnakamath/movielens-32m-enriched).
+The enriched dataset is available in [krishnakamath/movielens-32m-movies-enriched](https://huggingface.co/datasets/krishnakamath/movielens-32m-movies-enriched).
 
 ### Data Fields
 
