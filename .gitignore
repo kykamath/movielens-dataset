@@ -214,3 +214,4 @@ mini_gpt.iml
 .idea/
 ml-32m/
 .env
+*.jsonl
