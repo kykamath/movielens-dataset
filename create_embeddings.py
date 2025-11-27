@@ -56,41 +56,35 @@ def load_movies_from_hub() -> List[Movie]:
     print(f"Successfully loaded and converted {len(movies)} movies.")
     return movies
 
-def save_movies_to_jsonl(movies: List[Movie], output_path: str) -> None:
+def get_movies_with_embeddings() -> List[Movie]:
     """
-    Saves a list of Movie objects to a JSONL file.
+    Loads movie data from the Hugging Face Hub, generates embeddings for each movie,
+    and returns a list of Movie objects with their embeddings populated.
     """
-    print(f"Saving {len(movies)} movies to {output_path}...")
-    with open(output_path, 'w') as f:
-        for movie in movies:
-            # Convert Movie dataclass to dictionary for JSON serialization
-            movie_dict = {
-                "movie_id": movie.movie_id,
-                "title": movie.title,
-                "genres": movie.genres,
-                "plot_summary": movie.plot_summary,
-                "director": movie.director,
-                "stars": movie.stars,
-                # Update to save the new embedding field
-                "all_mpnet_base_v2_embedding": movie.all_mpnet_base_v2_embedding
-            }
-            f.write(json.dumps(movie_dict) + '\n')
-    print(f"Movies saved to {output_path}.")
-
-def upload_embeddings_dataset(jsonl_path: str, repo_id: str) -> None:
-    """
-    Loads a JSONL file and pushes it to the Hugging Face Hub.
-    """
-    if not os.path.exists(jsonl_path):
-        print(f"Error: JSONL file not found at {jsonl_path}. Cannot upload.")
-        return
-
-    print(f"Loading dataset from {jsonl_path} for upload...")
-    dataset_to_upload = Dataset.from_json(jsonl_path)
+    movies = load_movies_from_hub()
     
-    print(f"Pushing dataset to {repo_id}...")
-    dataset_to_upload.push_to_hub(repo_id, private=False)
-    print(f"Dataset pushed to Hugging Face Hub: https://huggingface.co/datasets/{repo_id}")
+    if not movies:
+        print("No movies loaded from the Hub to generate embeddings.")
+        return []
+
+    movies_to_embed = [movie for movie in movies if movie.plot_summary]
+    
+    if not movies_to_embed:
+        print("No movies with plot summaries found to generate embeddings.")
+        return movies # Return original list, possibly empty or without embeddings
+
+    texts_to_embed = [movie.to_embedding_string() for movie in movies_to_embed]
+    
+    print(f"\nGenerating embeddings for {len(texts_to_embed)} movies using {EMBEDDING_MODEL_NAME}...")
+    embeddings = generate_embeddings(texts_to_embed)
+
+    for movie, embedding in zip(movies_to_embed, embeddings):
+        movie.all_mpnet_base_v2_embedding = embedding.tolist()
+
+    print(f"\nSuccessfully generated and assigned embeddings.")
+    print(f"Shape of the full embeddings matrix: {embeddings.shape}")
+    
+    return movies_to_embed # Return movies that had embeddings generated
 
 
 def verify_embeddings(movies: List[Movie]) -> bool:
@@ -177,49 +171,23 @@ def verify_embeddings(movies: List[Movie]) -> bool:
 
 
 if __name__ == "__main__":
-    load_dotenv()
+    # load_dotenv()
+    #
+    # hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    # can_upload = False
+    # if hf_token:
+    #     print("Logging in to Hugging Face Hub...")
+    #     login(token=hf_token)
+    #     can_upload = True
+    # else:
+    #     print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
 
-    hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    can_upload = False
-    if hf_token:
-        print("Logging in to Hugging Face Hub...")
-        login(token=hf_token)
-        can_upload = True
-    else:
-        print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
+    movies_with_embeddings = get_movies_with_embeddings()
 
-    output_embeddings_file = "movies_with_embeddings.jsonl"
-
-    movies = load_movies_from_hub()
-
-    if movies:
-        movies_to_embed = [movie for movie in movies if movie.plot_summary]
-        
-        if movies_to_embed:
-            texts_to_embed = [movie.to_embedding_string() for movie in movies_to_embed]
-            
-            print(f"\nGenerating embeddings for {len(texts_to_embed)} movies using {EMBEDDING_MODEL_NAME}...")
-            embeddings = generate_embeddings(texts_to_embed)
-
-            for movie, embedding in zip(movies_to_embed, embeddings):
-                # Assign to the new embedding field
-                movie.all_mpnet_base_v2_embedding = embedding.tolist()
-
-            print(f"\nSuccessfully generated and assigned embeddings.")
-            print(f"Shape of the full embeddings matrix: {embeddings.shape}")
-            
-            if verify_embeddings(movies_to_embed):
-                print("\nEmbeddings verified successfully. Proceeding to save and upload.")
-                # save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
-
-                # if can_upload:
-                #     upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
-                # else:
-                #     print("Skipping upload to Hugging Face Hub as login could not be completed.")
-            else:
-                print("\nEmbedding verification failed. Skipping save and upload.")
-
+    if movies_with_embeddings:
+        if verify_embeddings(movies_with_embeddings):
+            print("\nEmbeddings verified successfully.")
         else:
-            print("No plot summaries found in the dataset to generate embeddings.")
+            print("\nEmbedding verification failed.")
     else:
-        print("No movies loaded from the Hub.")
+        print("No movies loaded or embeddings generated. Exiting.")
