@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 HUB_ENRICHED_REPO_ID = "krishnakamath/movielens-32m-movies-enriched"
-HUB_EMBEDDINGS_REPO_ID = "krishnakamath/movielens-32m-movies-embeddings"
+HUB_EMBEDDINGS_REPO_ID = "krishnakamath/movielens-32m-movies-enriched-embeddings"
 
 @dataclass
 class Movie:

@@ -8,6 +8,7 @@ import os
 import json
 from huggingface_hub import login
 from dotenv import load_dotenv
+from dataclasses import asdict # Import asdict for converting dataclass to dict
 
 # Define the new embedding model and its dimension
 EMBEDDING_MODEL_NAME = 'sentence-transformers/all-mpnet-base-v2'
@@ -85,6 +86,24 @@ def get_movies_with_embeddings() -> List[Movie]:
     print(f"Shape of the full embeddings matrix: {embeddings.shape}")
     
     return movies_to_embed # Return movies that had embeddings generated
+
+
+def upload_embeddings_dataset(movies: List[Movie], repo_id: str) -> None:
+    """
+    Converts a list of Movie objects to a Hugging Face Dataset and pushes it to the Hub.
+    """
+    if not movies:
+        print("No movies to upload. Skipping upload to Hugging Face Hub.")
+        return
+
+    print(f"Converting {len(movies)} Movie objects to Hugging Face Dataset for upload...")
+    # Convert list of Movie dataclass objects to list of dictionaries
+    movies_as_dicts = [asdict(movie) for movie in movies]
+    dataset_to_upload = Dataset.from_list(movies_as_dicts)
+    
+    print(f"Pushing dataset to {repo_id}...")
+    dataset_to_upload.push_to_hub(repo_id, private=True)
+    print(f"Dataset pushed to Hugging Face Hub: https://huggingface.co/datasets/{repo_id}")
 
 
 def verify_embeddings(movies: List[Movie]) -> bool:
@@ -171,23 +190,27 @@ def verify_embeddings(movies: List[Movie]) -> bool:
 
 
 if __name__ == "__main__":
-    # load_dotenv()
-    #
-    # hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
-    # can_upload = False
-    # if hf_token:
-    #     print("Logging in to Hugging Face Hub...")
-    #     login(token=hf_token)
-    #     can_upload = True
-    # else:
-    #     print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
+    load_dotenv()
+
+    hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    can_upload = False
+    if hf_token:
+        print("Logging in to Hugging Face Hub...")
+        login(token=hf_token)
+        can_upload = True
+    else:
+        print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
 
     movies_with_embeddings = get_movies_with_embeddings()
 
     if movies_with_embeddings:
         if verify_embeddings(movies_with_embeddings):
-            print("\nEmbeddings verified successfully.")
+            print("\nEmbeddings verified successfully. Proceeding to upload.")
+            if can_upload:
+                upload_embeddings_dataset(movies_with_embeddings, repo_id=HUB_EMBEDDINGS_REPO_ID)
+            else:
+                print("Skipping upload to Hugging Face Hub as login could not be completed.")
         else:
-            print("\nEmbedding verification failed.")
+            print("\nEmbedding verification failed. Skipping upload.")
     else:
         print("No movies loaded or embeddings generated. Exiting.")
