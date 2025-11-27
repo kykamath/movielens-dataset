@@ -7,18 +7,10 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import queue
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict
 from typing import List, Set, Dict
 
-
-@dataclass
-class Movie:
-    movie_id: int
-    title: str
-    genres: List[str]
-    plot_summary: str = ""
-    director: str = ""
-    stars: List[str] = field(default_factory=list)
+from models import Movie, HUB_ENRICHED_REPO_ID
 
 
 def get_movie_details_batch(movies: List[Movie]) -> None:
@@ -188,8 +180,6 @@ if __name__ == "__main__":
     else:
         print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
 
-    # Name of the dataset on Hugging Face Hub.
-    HUB_ENRICHED_REPO_ID = "krishnakamath/movielens-32m-movies-enriched"
     # Total number of movies we want to process in this crawl.
     MOVIES_TO_PROCESS = 500
     # Number of movies we want to enrich in a single OpenAI API call.
