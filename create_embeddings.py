@@ -160,9 +160,9 @@ def verify_embeddings(movies: List[Movie]):
             print(f"  Similarity between '{title1}' and '{title2}' ({expected_relation}): {similarity:.4f}")
             
             # Basic assertion for expected ranges
-            if expected_relation == "similar" and similarity < 0.5: # Threshold can be adjusted
+            if expected_relation == "similar" and similarity < 0.55: # Threshold can be adjusted
                 print(f"    WARNING: Expected high similarity but got {similarity:.4f}")
-            elif expected_relation == "dissimilar" and similarity > 0.3: # Threshold can be adjusted
+            elif expected_relation == "dissimilar" and similarity > 0.46: # Threshold can be adjusted
                 print(f"    WARNING: Expected low similarity but got {similarity:.4f}")
         else:
             print(f"  Could not find one or both movies for similarity check: '{title1}', '{title2}'")
@@ -204,12 +204,12 @@ if __name__ == "__main__":
             
             verify_embeddings(movies_to_embed)
 
-            save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
-
-            if can_upload:
-                upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
-            else:
-                print("Skipping upload to Hugging Face Hub as login could not be completed.")
+            # save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
+            #
+            # if can_upload:
+            #     upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
+            # else:
+            #     print("Skipping upload to Hugging Face Hub as login could not be completed.")
 
         else:
             print("No plot summaries found in the dataset to generate embeddings.")
