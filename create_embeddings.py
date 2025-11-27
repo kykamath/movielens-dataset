@@ -93,36 +93,37 @@ def upload_embeddings_dataset(jsonl_path: str, repo_id: str) -> None:
     print(f"Dataset pushed to Hugging Face Hub: https://huggingface.co/datasets/{repo_id}")
 
 
-def verify_embeddings(movies: List[Movie]):
+def verify_embeddings(movies: List[Movie]) -> bool:
     """
     Performs technical and semantic validation of generated embeddings.
+    Returns True if all checks pass, False otherwise.
     """
     print("\n--- Verifying Embeddings ---")
+    verification_passed = True
 
     if not movies:
         print("No movies to verify.")
-        return
+        return False
 
     # Technical Sanity Checks
     print("\n1. Technical Sanity Checks:")
-    all_embeddings_valid = True
     for i, movie in enumerate(movies):
         # Use the new embedding field
         embedding = np.array(movie.all_mpnet_base_v2_embedding)
         
         if embedding.shape != (EMBEDDING_DIMENSION,): # Update expected dimension
             print(f"  ERROR: Movie '{movie.title}' (ID: {movie.movie_id}) has incorrect embedding dimension: {embedding.shape}, expected ({EMBEDDING_DIMENSION},)")
-            all_embeddings_valid = False
+            verification_passed = False
         if np.all(embedding == 0):
             print(f"  ERROR: Movie '{movie.title}' (ID: {movie.movie_id}) has a zero vector embedding.")
-            all_embeddings_valid = False
+            verification_passed = False
         if np.any(np.isnan(embedding)) or np.any(np.isinf(embedding)):
             print(f"  ERROR: Movie '{movie.title}' (ID: {movie.movie_id}) has NaN or Inf values in embedding.")
-            all_embeddings_valid = False
+            verification_passed = False
         if i >= 100: # Limit checks to first 100 for brevity
             break
     
-    if all_embeddings_valid:
+    if verification_passed:
         print("  All technical checks passed for sampled movies.")
     else:
         print("  Some technical checks failed. Review the errors above.")
@@ -154,6 +155,7 @@ def verify_embeddings(movies: List[Movie]):
             # Ensure embeddings are not zero vectors before calculating similarity
             if np.all(emb1 == 0) or np.all(emb2 == 0):
                 print(f"  Skipping similarity for '{title1}' and '{title2}' due to zero embedding.")
+                # This is a warning, not a failure of the embedding generation itself, so don't set verification_passed = False
                 continue
 
             similarity = 1 - cosine(emb1, emb2) # Cosine distance is 1 - cosine similarity
@@ -162,12 +164,16 @@ def verify_embeddings(movies: List[Movie]):
             # Basic assertion for expected ranges
             if expected_relation == "similar" and similarity < 0.55: # Threshold can be adjusted
                 print(f"    WARNING: Expected high similarity but got {similarity:.4f}")
+                verification_passed = False # Semantic check failure
             elif expected_relation == "dissimilar" and similarity > 0.46: # Threshold can be adjusted
                 print(f"    WARNING: Expected low similarity but got {similarity:.4f}")
+                verification_passed = False # Semantic check failure
         else:
             print(f"  Could not find one or both movies for similarity check: '{title1}', '{title2}'")
+            # This is a data issue, not an embedding issue, so don't set verification_passed = False
 
     print("\n--- Embedding Verification Complete ---")
+    return verification_passed
 
 
 if __name__ == "__main__":
@@ -202,14 +208,16 @@ if __name__ == "__main__":
             print(f"\nSuccessfully generated and assigned embeddings.")
             print(f"Shape of the full embeddings matrix: {embeddings.shape}")
             
-            verify_embeddings(movies_to_embed)
+            if verify_embeddings(movies_to_embed):
+                print("\nEmbeddings verified successfully. Proceeding to save and upload.")
+                # save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
 
-            # save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
-            #
-            # if can_upload:
-            #     upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
-            # else:
-            #     print("Skipping upload to Hugging Face Hub as login could not be completed.")
+                # if can_upload:
+                #     upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
+                # else:
+                #     print("Skipping upload to Hugging Face Hub as login could not be completed.")
+            else:
+                print("\nEmbedding verification failed. Skipping save and upload.")
 
         else:
             print("No plot summaries found in the dataset to generate embeddings.")
