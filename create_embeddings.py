@@ -9,10 +9,13 @@ import json
 from huggingface_hub import login
 from dotenv import load_dotenv
 
+# Define the new embedding model and its dimension
+EMBEDDING_MODEL_NAME = 'sentence-transformers/all-mpnet-base-v2'
+EMBEDDING_DIMENSION = 768 # all-mpnet-base-v2 produces 768-dimensional embeddings
 
 def generate_embeddings(texts: List[str], batch_size: int = 32) -> np.ndarray:
     """
-    Generates embeddings for a list of texts using the 'all-MiniLM-L12-v2' model.
+    Generates embeddings for a list of texts using the 'all-mpnet-base-v2' model.
     The sentence-transformers library handles batching internally, so you can pass a large list of texts directly.
 
     Args:
@@ -22,8 +25,7 @@ def generate_embeddings(texts: List[str], batch_size: int = 32) -> np.ndarray:
     Returns:
         A numpy array containing the embeddings.
     """
-    # model = SentenceTransformer('sentence-transformers/all-MiniLM-L12-v2')
-    model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     embeddings = model.encode(texts, batch_size=batch_size, show_progress_bar=True)
     return embeddings
 
@@ -46,7 +48,8 @@ def load_movies_from_hub() -> List[Movie]:
             plot_summary=item.get('plot_summary', ''),
             director=item.get('director', ''),
             stars=item.get('stars', []),
-            all_MiniLM_L12_v2_embedding=item.get('all_MiniLM_L12_v2_embedding', []) # Ensure this field is handled
+            # Update to load the new embedding field, or an empty list if not present
+            all_mpnet_base_v2_embedding=item.get('all_mpnet_base_v2_embedding', []) 
         )
         movies.append(movie)
         
@@ -68,7 +71,8 @@ def save_movies_to_jsonl(movies: List[Movie], output_path: str) -> None:
                 "plot_summary": movie.plot_summary,
                 "director": movie.director,
                 "stars": movie.stars,
-                "all_MiniLM_L12_v2_embedding": movie.all_MiniLM_L12_v2_embedding
+                # Update to save the new embedding field
+                "all_mpnet_base_v2_embedding": movie.all_mpnet_base_v2_embedding
             }
             f.write(json.dumps(movie_dict) + '\n')
     print(f"Movies saved to {output_path}.")
@@ -103,10 +107,11 @@ def verify_embeddings(movies: List[Movie]):
     print("\n1. Technical Sanity Checks:")
     all_embeddings_valid = True
     for i, movie in enumerate(movies):
-        embedding = np.array(movie.all_MiniLM_L12_v2_embedding)
+        # Use the new embedding field
+        embedding = np.array(movie.all_mpnet_base_v2_embedding)
         
-        if embedding.shape != (384,):
-            print(f"  ERROR: Movie '{movie.title}' (ID: {movie.movie_id}) has incorrect embedding dimension: {embedding.shape}")
+        if embedding.shape != (EMBEDDING_DIMENSION,): # Update expected dimension
+            print(f"  ERROR: Movie '{movie.title}' (ID: {movie.movie_id}) has incorrect embedding dimension: {embedding.shape}, expected ({EMBEDDING_DIMENSION},)")
             all_embeddings_valid = False
         if np.all(embedding == 0):
             print(f"  ERROR: Movie '{movie.title}' (ID: {movie.movie_id}) has a zero vector embedding.")
@@ -134,15 +139,17 @@ def verify_embeddings(movies: List[Movie]):
         ("Thunderball (1965)", "From Russia with Love (1963)", "similar"),
     ]
 
-    movie_lookup = {movie.title: movie for movie in movies if movie.all_MiniLM_L12_v2_embedding}
+    # Use the new embedding field for lookup
+    movie_lookup = {movie.title: movie for movie in movies if movie.all_mpnet_base_v2_embedding}
 
     for title1, title2, expected_relation in test_cases:
         movie1 = movie_lookup.get(title1)
         movie2 = movie_lookup.get(title2)
 
         if movie1 and movie2:
-            emb1 = np.array(movie1.all_MiniLM_L12_v2_embedding)
-            emb2 = np.array(movie2.all_MiniLM_L12_v2_embedding)
+            # Use the new embedding field
+            emb1 = np.array(movie1.all_mpnet_base_v2_embedding)
+            emb2 = np.array(movie2.all_mpnet_base_v2_embedding)
             
             # Ensure embeddings are not zero vectors before calculating similarity
             if np.all(emb1 == 0) or np.all(emb2 == 0):
@@ -155,7 +162,7 @@ def verify_embeddings(movies: List[Movie]):
             # Basic assertion for expected ranges
             if expected_relation == "similar" and similarity < 0.5: # Threshold can be adjusted
                 print(f"    WARNING: Expected high similarity but got {similarity:.4f}")
-            elif expected_relation == "dissimilar" and similarity > 0.4: # Threshold can be adjusted
+            elif expected_relation == "dissimilar" and similarity > 0.3: # Threshold can be adjusted
                 print(f"    WARNING: Expected low similarity but got {similarity:.4f}")
         else:
             print(f"  Could not find one or both movies for similarity check: '{title1}', '{title2}'")
@@ -185,23 +192,24 @@ if __name__ == "__main__":
         if movies_to_embed:
             texts_to_embed = [movie.to_embedding_string() for movie in movies_to_embed]
             
-            print(f"\nGenerating embeddings for {len(texts_to_embed)} movies...")
+            print(f"\nGenerating embeddings for {len(texts_to_embed)} movies using {EMBEDDING_MODEL_NAME}...")
             embeddings = generate_embeddings(texts_to_embed)
 
             for movie, embedding in zip(movies_to_embed, embeddings):
-                movie.all_MiniLM_L12_v2_embedding = embedding.tolist()
+                # Assign to the new embedding field
+                movie.all_mpnet_base_v2_embedding = embedding.tolist()
 
             print(f"\nSuccessfully generated and assigned embeddings.")
-            print("Shape of the full embeddings matrix:", embeddings.shape)
+            print(f"Shape of the full embeddings matrix: {embeddings.shape}")
             
             verify_embeddings(movies_to_embed)
 
-            # save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
+            save_movies_to_jsonl(movies_to_embed, output_embeddings_file)
 
-            # if can_upload:
-            #     upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
-            # else:
-            #     print("Skipping upload to Hugging Face Hub as login could not be completed.")
+            if can_upload:
+                upload_embeddings_dataset(output_embeddings_file, repo_id=HUB_EMBEDDINGS_REPO_ID)
+            else:
+                print("Skipping upload to Hugging Face Hub as login could not be completed.")
 
         else:
             print("No plot summaries found in the dataset to generate embeddings.")

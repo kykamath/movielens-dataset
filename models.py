@@ -12,7 +12,7 @@ class Movie:
     plot_summary: str = ""
     director: str = ""
     stars: List[str] = field(default_factory=list)
-    all_MiniLM_L12_v2_embedding: List[float] = field(default_factory=list)
+    all_mpnet_base_v2_embedding: List[float] = field(default_factory=list) # Renamed field
 
     def to_embedding_string(self) -> str:
         """
