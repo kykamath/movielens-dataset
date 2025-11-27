@@ -1,5 +1,5 @@
 import pandas as pd
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 from huggingface_hub import login
 import os
 import json
@@ -145,9 +145,35 @@ def upload_enriched_dataset(jsonl_path: str, repo_id: str, private: bool = False
 
     print(f"Loading dataset from {jsonl_path}...")
     enriched_dataset = Dataset.from_json(jsonl_path)
-
+    
     print(f"Pushing dataset to {repo_id}...")
     push_dataset_to_hub(enriched_dataset, repo_id, private)
+
+
+def sync_from_hub(repo_id: str, output_path: str) -> None:
+    """
+    Downloads the latest version of the dataset from Hugging Face Hub, deleting the old local file first.
+    """
+    if os.path.exists(output_path):
+        print(f"Removing existing local file: {output_path}")
+        os.remove(output_path)
+
+    try:
+        print(f"Attempting to download latest dataset from '{repo_id}'...")
+        hub_dataset = load_dataset(repo_id, split="train")
+        print(f"Successfully downloaded dataset. Found {len(hub_dataset)} records.")
+
+        print(f"Syncing dataset to new local file: {output_path}")
+        with open(output_path, 'w') as f:
+            for movie_data in hub_dataset:
+                f.write(json.dumps(movie_data) + '\n')
+        print("Local file synced with Hugging Face Hub.")
+
+    except FileNotFoundError:
+        print(f"Dataset '{repo_id}' not found on Hugging Face Hub. A new local file will be created.")
+    except Exception as e:
+        print(f"An error occurred while trying to download the dataset: {e}")
+        print("Proceeding without a synced file. A new local file will be created.")
 
 
 if __name__ == "__main__":
@@ -165,16 +191,20 @@ if __name__ == "__main__":
     # Name of the dataset on Hugging Face Hub.
     HUB_ENRICHED_REPO_ID = "krishnakamath/movielens-32m-movies-enriched"
     # Total number of movies we want to process in this crawl.
-    MOVIES_TO_PROCESS = 250
+    MOVIES_TO_PROCESS = 500
     # Number of movies we want to enrich in a single OpenAI API call.
     BATCH_SIZE = 10
 
     output_file = "movies_with_details.jsonl"
+
+    if can_upload:
+        sync_from_hub(HUB_ENRICHED_REPO_ID, output_file)
+
     processed_movie_ids = load_processed_movie_ids(output_file)
-    print(f"Found {len(processed_movie_ids)} processed movies.")
+    print(f"Found {len(processed_movie_ids)} processed movies from '{output_file}'.")
 
     movie_queue = build_movie_queue("ml-32m/movies.csv", processed_movie_ids)
-    print(f"Queue built with {movie_queue.qsize()} movies to process.")
+    print(f"Queue built with {movie_queue.qsize()} new movies to process.")
 
     processed_count = 0
     while not movie_queue.empty() and processed_count < MOVIES_TO_PROCESS:
@@ -201,7 +231,7 @@ if __name__ == "__main__":
                 append_movie_to_jsonl(movie, output_file)
                 processed_count += 1
 
-            print(f"Batch processed. Total movies processed: {processed_count}/{MOVIES_TO_PROCESS}")
+            print(f"Batch processed. Total movies processed in this run: {processed_count}/{MOVIES_TO_PROCESS}")
 
         except Exception as e:
             print(f"Failed to process batch. Error: {e}")
