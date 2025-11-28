@@ -4,8 +4,55 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from datasets import load_dataset
+from sentence_transformers import SentenceTransformer
 from residual_quantized_vae import ResidualQuantizer
-from models import HUB_EMBEDDINGS_REPO_ID
+from models import Movie
+
+# --- New, Modular Component ---
+class EmbeddingGenerator:
+    """
+    A dedicated class to handle the generation of embeddings from a text dataset.
+    """
+    def __init__(self, model_name='sentence-transformers/all-mpnet-base-v2'):
+        self.model_name = model_name
+        self.embedding_model = None
+
+    def _load_model(self):
+        """Lazy-loads the sentence transformer model."""
+        if self.embedding_model is None:
+            print(f"Loading embedding model: '{self.model_name}'...")
+            self.embedding_model = SentenceTransformer(self.model_name)
+
+    def generate_from_hub(self, repo_id: str) -> torch.Tensor:
+        """
+        Loads a dataset from the Hub, creates embedding strings, and generates embeddings.
+        """
+        self._load_model()
+        
+        print(f"Loading source data from '{repo_id}' to generate embeddings...")
+        hub_dataset = load_dataset(repo_id, split="train")
+        
+        texts_to_embed = []
+        for item in hub_dataset:
+            if item.get('plot_summary'):
+                movie = Movie(
+                    movie_id=item.get('movie_id'),
+                    title=item.get('title'),
+                    genres=item.get('genres', []),
+                    plot_summary=item.get('plot_summary', ''),
+                    director=item.get('director', ''),
+                    stars=item.get('stars', [])
+                )
+                texts_to_embed.append(movie.to_embedding_string())
+
+        if not texts_to_embed:
+            raise ValueError("No valid texts for embedding found in the dataset.")
+            
+        print(f"Generating embeddings for {len(texts_to_embed)} movies...")
+        embeddings = self.embedding_model.encode(texts_to_embed, show_progress_bar=True)
+        
+        return torch.tensor(embeddings, dtype=torch.float32)
+
 
 class RQVAE(pl.LightningModule):
     """
@@ -25,7 +72,6 @@ class RQVAE(pl.LightningModule):
         return self.quantizer(z)
 
     def _common_step(self, batch, batch_idx):
-        """A common step for both training and validation."""
         batch_z, = batch
         z_quantized, _, vq_loss = self.quantizer(batch_z)
         reconstruction_loss = F.mse_loss(z_quantized, batch_z)
@@ -52,40 +98,34 @@ class RQVAE(pl.LightningModule):
 
 class MovieEmbeddingDataModule(pl.LightningDataModule):
     """
-    A PyTorch Lightning DataModule for handling the movie embeddings dataset.
+    A PyTorch Lightning DataModule that uses an EmbeddingGenerator to prepare data.
     """
-    def __init__(self, repo_id: str, batch_size: int, num_workers: int = 4):
+    def __init__(self, enriched_repo_id: str, batch_size: int, num_workers: int = 4):
         super().__init__()
-        self.repo_id = repo_id
+        self.repo_id = enriched_repo_id
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.embedding_generator = EmbeddingGenerator() # Composition
         self.full_dataset = None
         self.train_dataset = None
         self.val_dataset = None
 
     def prepare_data(self):
-        # This method is called only once on one process.
-        # Use it to download the dataset.
+        # Download the source dataset.
         load_dataset(self.repo_id)
 
     def setup(self, stage: str = None):
-        # This method is called on every GPU process.
-        # Use it to load, split, and process the data.
-        hub_dataset = load_dataset(self.repo_id, split="train")
-        embeddings_list = [item['all_mpnet_base_v2_embedding'] for item in hub_dataset if item['all_mpnet_base_v2_embedding']]
-        
-        if not embeddings_list:
-            raise ValueError("No embeddings found in the dataset.")
-            
-        full_embeddings_tensor = torch.tensor(embeddings_list, dtype=torch.float32)
+        # Delegate embedding generation to the specialized class
+        full_embeddings_tensor = self.embedding_generator.generate_from_hub(self.repo_id)
         self.full_dataset = TensorDataset(full_embeddings_tensor)
         
-        print(f"Loaded {len(self.full_dataset)} embeddings.")
+        print(f"Generated {len(self.full_dataset)} embeddings.")
         
         # Split the data
         train_size = int(0.8 * len(self.full_dataset))
         val_size = len(self.full_dataset) - train_size
         self.train_dataset, self.val_dataset = random_split(self.full_dataset, [train_size, val_size])
+        print(f"Data split into {len(self.train_dataset)} training and {len(self.val_dataset)} validation samples.")
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, persistent_workers=True)

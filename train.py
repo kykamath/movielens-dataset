@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
 from rqvae_lightning import RQVAE, MovieEmbeddingDataModule
-from models import HUB_EMBEDDINGS_REPO_ID
+from models import HUB_ENRICHED_REPO_ID # 1. Import the correct source repo ID
 
 # --- 1. Hyperparameters ---
 # Model Hyperparameters
@@ -33,7 +33,8 @@ def main():
 
     # --- 3. Initialize DataModule ---
     print("Initializing DataModule...")
-    data_module = MovieEmbeddingDataModule(repo_id=HUB_EMBEDDINGS_REPO_ID, batch_size=BATCH_SIZE)
+    # 2. Use the correct keyword argument 'enriched_repo_id' and the correct variable
+    data_module = MovieEmbeddingDataModule(enriched_repo_id=HUB_ENRICHED_REPO_ID, batch_size=BATCH_SIZE)
 
     # --- 4. Initialize Model ---
     print("Initializing RQ-VAE model...")
