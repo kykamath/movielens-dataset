@@ -215,3 +215,6 @@ mini_gpt.iml
 ml-32m/
 .env
 *.jsonl
+*.yaml
+*.csv
+*.ckpt
