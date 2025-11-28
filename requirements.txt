@@ -7,3 +7,6 @@ sentence-transformers
 pytest
 pytorch-lightning
 tensorboard
+umap-learn
+plotly
+pandas
