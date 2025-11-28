@@ -1,5 +1,5 @@
 import pandas as pd
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, Features, Value, Sequence
 import os
 import json
 from openai import OpenAI
@@ -60,7 +60,12 @@ def get_movie_details_batch(movies: List[Movie]) -> None:
         if title in movie_map:
             movie = movie_map[title]
             movie.plot_summary = details.get("plot_summary", "")
-            movie.director = details.get("director", "")
+            director = details.get("director", "")
+            # Ensure director is always a string
+            if isinstance(director, list):
+                movie.director = ", ".join(director)
+            else:
+                movie.director = director
             movie.stars = details.get("stars", [])
         else:
             print(f"Warning: Received details for title '{title}' which was not in the request batch.")
@@ -121,14 +126,41 @@ def append_movie_to_jsonl(movie: Movie, output_path: str) -> None:
 def upload_enriched_dataset(jsonl_path: str, repo_id: str, private: bool = False) -> None:
     """
     Loads a JSONL file and pushes it to the Hugging Face Hub.
+    This function now handles potential inconsistencies in the 'director' field.
     """
     if not os.path.exists(jsonl_path):
         print(f"Error: JSONL file not found at {jsonl_path}. Cannot upload.")
         return
 
-    print(f"Loading dataset from {jsonl_path}...")
-    enriched_dataset = Dataset.from_json(jsonl_path)
-    
+    print(f"Loading and cleaning dataset from {jsonl_path}...")
+
+    # Define a flexible schema to read the data without initial errors
+    features = Features({
+        'movie_id': Value('int64'),
+        'title': Value('string'),
+        'genres': Sequence(Value('string')),
+        'plot_summary': Value('string'),
+        'director': Value('string'), # Initially read as string, will handle lists manually
+        'stars': Sequence(Value('string'))
+    })
+
+    # Manually read and clean the data
+    cleaned_data = []
+    with open(jsonl_path, 'r') as f:
+        for line in f:
+            try:
+                record = json.loads(line)
+                # If director is a list, convert it to a comma-separated string
+                if isinstance(record.get('director'), list):
+                    record['director'] = ", ".join(record['director'])
+                cleaned_data.append(record)
+            except json.JSONDecodeError:
+                print(f"Warning: Could not decode JSON from line: {line.strip()}")
+
+    # Create a DataFrame and then a Dataset
+    df = pd.DataFrame(cleaned_data)
+    enriched_dataset = Dataset.from_pandas(df, features=features)
+
     print(f"Pushing dataset to {repo_id}...")
     enriched_dataset.push_to_hub(repo_id, private=private)
     print(f"Dataset pushed to Hugging Face Hub: https://huggingface.co/datasets/{repo_id}")

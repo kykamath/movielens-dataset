@@ -4,7 +4,7 @@ import time
 from dotenv import load_dotenv
 from huggingface_hub import login
 
-from models import Movie, HUB_ENRICHED_REPO_ID
+from models import Movie, HUB_ENRICHED_REPO_ID, ENRICHED_MOVIES_JSONL
 from enrichment_utils import (
     get_movie_details_batch,
     load_processed_movie_ids,
@@ -17,9 +17,9 @@ from enrichment_utils import (
 
 def main():
     # --- Configuration ---
-    MOVIES_TO_PROCESS = 1000  # Total number of movies we want to process in this crawl.
+    MOVIES_TO_PROCESS = 2500  # Total number of movies we want to process in this crawl.
     BATCH_SIZE = 10           # Number of movies we want to enrich in a single OpenAI API call.
-    OUTPUT_FILE = "movies_with_details.jsonl"
+    OUTPUT_FILE = ENRICHED_MOVIES_JSONL
     MOVIES_CSV_PATH = "ml-32m/movies.csv" # Path to the original MovieLens CSV
 
     # --- 1. Authentication ---
