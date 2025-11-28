@@ -4,3 +4,5 @@ transformers
 openai
 python-dotenv
 sentence-transformers
+pytest
+pytorch-lightning

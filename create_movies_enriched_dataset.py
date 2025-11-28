@@ -181,7 +181,7 @@ if __name__ == "__main__":
         print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
 
     # Total number of movies we want to process in this crawl.
-    MOVIES_TO_PROCESS = 500
+    MOVIES_TO_PROCESS = 1000
     # Number of movies we want to enrich in a single OpenAI API call.
     BATCH_SIZE = 10
 
