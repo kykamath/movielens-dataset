@@ -1,6 +1,5 @@
 datasets
 torch
-transformers
 openai
 python-dotenv
 sentence-transformers
@@ -10,3 +9,4 @@ tensorboard
 umap-learn
 plotly
 pandas
+huggingface_hub

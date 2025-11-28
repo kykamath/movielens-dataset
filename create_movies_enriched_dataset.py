@@ -1,176 +1,29 @@
-import pandas as pd
-from datasets import Dataset, load_dataset
-from huggingface_hub import login
 import os
-import json
-from openai import OpenAI
-from dotenv import load_dotenv
 import queue
 import time
-from dataclasses import asdict
-from typing import List, Set, Dict
+from dotenv import load_dotenv
+from huggingface_hub import login
 
 from models import Movie, HUB_ENRICHED_REPO_ID
+from enrichment_utils import (
+    get_movie_details_batch,
+    load_processed_movie_ids,
+    build_movie_queue,
+    append_movie_to_jsonl,
+    upload_enriched_dataset,
+    sync_enriched_data_from_hub
+)
 
 
-def get_movie_details_batch(movies: List[Movie]) -> None:
-    """
-    Generates plot summary, director, and stars for a batch of movies using the OpenAI API.
-    """
-    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+def main():
+    # --- Configuration ---
+    MOVIES_TO_PROCESS = 1000  # Total number of movies we want to process in this crawl.
+    BATCH_SIZE = 10           # Number of movies we want to enrich in a single OpenAI API call.
+    OUTPUT_FILE = "movies_with_details.jsonl"
+    MOVIES_CSV_PATH = "ml-32m/movies.csv" # Path to the original MovieLens CSV
 
-    movie_titles_str = "\n".join([f"{i+1}. {movie.title}" for i, movie in enumerate(movies)])
-
-    prompt = f"""
-    [INST] You are an expert film critic. Given a numbered list of movie titles, provide a JSON object containing a list of movie details.
-    Each item in the list should be a JSON object with the following fields for the corresponding movie:
-    - "title": The original movie title.
-    - "plot_summary": A brief, but comprehensive plot summary (100-150 words).
-    - "director": The name of the director.
-    - "stars": A list of the top 3 starring actors.
-
-    The output should be a single JSON object with a key "movies" that contains the list of movie details.
-    Ensure the order of movies in the output list matches the order of the input titles.
-
-    Movie Titles:
-    {movie_titles_str}
-    [/INST]
-    """
-
-    max_tokens = len(movies) * 400
-
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are an expert in movies and respond in JSON format."},
-            {"role": "user", "content": prompt},
-        ],
-        max_tokens=max_tokens,
-        temperature=0.7,
-        top_p=0.95,
-        response_format={"type": "json_object"},
-    )
-
-    response_data = json.loads(response.choices[0].message.content)
-    details_list = response_data.get("movies", [])
-
-    movie_map: Dict[str, Movie] = {movie.title: movie for movie in movies}
-
-    for details in details_list:
-        title = details.get("title")
-        if title in movie_map:
-            movie = movie_map[title]
-            movie.plot_summary = details.get("plot_summary", "")
-            movie.director = details.get("director", "")
-            movie.stars = details.get("stars", [])
-        else:
-            print(f"Warning: Received details for title '{title}' which was not in the request batch.")
-
-
-def load_movies_dataset(csv_path: str = "ml-32m/movies.csv") -> Dataset:
-    """
-    Read movies.csv and create a Hugging Face dataset.
-    """
-    df = pd.read_csv(csv_path)
-    df['genres'] = df['genres'].apply(lambda x: x.split('|') if isinstance(x, str) else [])
-    return Dataset.from_pandas(df)
-
-
-def load_processed_movie_ids(output_path: str) -> Set[int]:
-    """
-    Loads processed movie IDs from the output JSONL file.
-    """
-    processed_ids = set()
-    if os.path.exists(output_path):
-        with open(output_path, 'r') as f:
-            for line in f:
-                try:
-                    movie_data = json.loads(line)
-                    if 'movie_id' in movie_data:
-                        processed_ids.add(movie_data['movie_id'])
-                except json.JSONDecodeError:
-                    print(f"Warning: Could not decode JSON from line: {line.strip()}")
-    return processed_ids
-
-
-def build_movie_queue(csv_path: str, processed_ids: Set[int]) -> queue.Queue:
-    """
-    Loads movies from a CSV file and builds a queue of unprocessed Movie objects.
-    """
-    dataset = load_movies_dataset(csv_path)
-    movie_queue = queue.Queue()
-    for movie_data in dataset:
-        if movie_data['movieId'] not in processed_ids:
-            movie = Movie(
-                movie_id=movie_data['movieId'],
-                title=movie_data['title'],
-                genres=movie_data['genres']
-            )
-            movie_queue.put(movie)
-    return movie_queue
-
-
-def append_movie_to_jsonl(movie: Movie, output_path: str) -> None:
-    """
-    Appends a movie object to a JSONL file.
-    """
-    movie_dict = asdict(movie)
-    with open(output_path, 'a') as f:
-        f.write(json.dumps(movie_dict) + '\n')
-
-
-def push_dataset_to_hub(dataset: Dataset, repo_id: str, private: bool = False) -> None:
-    """
-    Push the dataset to Hugging Face Hub.
-    """
-    dataset.push_to_hub(repo_id, private=private)
-    print(f"Dataset pushed to Hugging Face Hub: https://huggingface.co/datasets/{repo_id}")
-
-
-def upload_enriched_dataset(jsonl_path: str, repo_id: str, private: bool = False) -> None:
-    """
-    Loads a JSONL file and pushes it to the Hugging Face Hub.
-    """
-    if not os.path.exists(jsonl_path):
-        print(f"Error: JSONL file not found at {jsonl_path}. Cannot upload.")
-        return
-
-    print(f"Loading dataset from {jsonl_path}...")
-    enriched_dataset = Dataset.from_json(jsonl_path)
-    
-    print(f"Pushing dataset to {repo_id}...")
-    push_dataset_to_hub(enriched_dataset, repo_id, private)
-
-
-def sync_from_hub(repo_id: str, output_path: str) -> None:
-    """
-    Downloads the latest version of the dataset from Hugging Face Hub, deleting the old local file first.
-    """
-    if os.path.exists(output_path):
-        print(f"Removing existing local file: {output_path}")
-        os.remove(output_path)
-
-    try:
-        print(f"Attempting to download latest dataset from '{repo_id}'...")
-        hub_dataset = load_dataset(repo_id, split="train")
-        print(f"Successfully downloaded dataset. Found {len(hub_dataset)} records.")
-
-        print(f"Syncing dataset to new local file: {output_path}")
-        with open(output_path, 'w') as f:
-            for movie_data in hub_dataset:
-                f.write(json.dumps(movie_data) + '\n')
-        print("Local file synced with Hugging Face Hub.")
-
-    except FileNotFoundError:
-        print(f"Dataset '{repo_id}' not found on Hugging Face Hub. A new local file will be created.")
-    except Exception as e:
-        print(f"An error occurred while trying to download the dataset: {e}")
-        print("Proceeding without a synced file. A new local file will be created.")
-
-
-if __name__ == "__main__":
+    # --- 1. Authentication ---
     load_dotenv()
-
     hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
     can_upload = False
     if hf_token:
@@ -180,25 +33,25 @@ if __name__ == "__main__":
     else:
         print("Warning: HUGGING_FACE_HUB_TOKEN not found. Upload to Hub will be skipped.")
 
-    # Total number of movies we want to process in this crawl.
-    MOVIES_TO_PROCESS = 1000
-    # Number of movies we want to enrich in a single OpenAI API call.
-    BATCH_SIZE = 10
-
-    output_file = "movies_with_details.jsonl"
-
+    # --- 2. Sync with Hugging Face Hub ---
+    # If a local file exists, it will be removed and replaced with the latest from the Hub.
+    # If the Hub repo doesn't exist, it will proceed with an empty local file.
     if can_upload:
-        sync_from_hub(HUB_ENRICHED_REPO_ID, output_file)
+        sync_enriched_data_from_hub(HUB_ENRICHED_REPO_ID, OUTPUT_FILE)
+    else:
+        print("Skipping sync from Hub as login could not be completed.")
 
-    processed_movie_ids = load_processed_movie_ids(output_file)
-    print(f"Found {len(processed_movie_ids)} processed movies from '{output_file}'.")
+    # --- 3. Load Processed IDs and Build Queue ---
+    processed_movie_ids = load_processed_movie_ids(OUTPUT_FILE)
+    print(f"Found {len(processed_movie_ids)} processed movies from '{OUTPUT_FILE}'.")
 
-    movie_queue = build_movie_queue("ml-32m/movies.csv", processed_movie_ids)
+    movie_queue = build_movie_queue(MOVIES_CSV_PATH, processed_movie_ids)
     print(f"Queue built with {movie_queue.qsize()} new movies to process.")
 
+    # --- 4. Process Movies in Batches ---
     processed_count = 0
     while not movie_queue.empty() and processed_count < MOVIES_TO_PROCESS:
-        batch = []
+        batch: List[Movie] = []
         current_batch_size = min(BATCH_SIZE, MOVIES_TO_PROCESS - processed_count, movie_queue.qsize())
         
         if current_batch_size <= 0:
@@ -215,10 +68,10 @@ if __name__ == "__main__":
             movie_titles_in_batch = [movie.title for movie in batch]
             print(f"Processing batch of {len(batch)} movies: {movie_titles_in_batch}")
             
-            get_movie_details_batch(batch)
+            get_movie_details_batch(batch) # Enrich movies in batch
 
             for movie in batch:
-                append_movie_to_jsonl(movie, output_file)
+                append_movie_to_jsonl(movie, OUTPUT_FILE)
                 processed_count += 1
 
             print(f"Batch processed. Total movies processed in this run: {processed_count}/{MOVIES_TO_PROCESS}")
@@ -227,10 +80,15 @@ if __name__ == "__main__":
             print(f"Failed to process batch. Error: {e}")
         
         print(f"{movie_queue.qsize()} movies remaining in the queue.")
-        time.sleep(1)
+        time.sleep(1) # Be kind to the API
 
-    print("\nMovie processing complete.")
+    print("\nMovie enrichment complete.")
+
+    # --- 5. Upload Final Enriched Dataset to Hugging Face Hub ---
     if can_upload:
-        upload_enriched_dataset(output_file, repo_id=HUB_ENRICHED_REPO_ID, private=False)
+        upload_enriched_dataset(OUTPUT_FILE, repo_id=HUB_ENRICHED_REPO_ID, private=False)
     else:
         print("Skipping upload to Hugging Face Hub as login could not be completed.")
+
+if __name__ == "__main__":
+    main()
