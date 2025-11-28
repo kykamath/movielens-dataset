@@ -6,14 +6,14 @@ from torch.utils.data import DataLoader, TensorDataset, random_split
 from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
 from residual_quantized_vae import ResidualQuantizer
-from models import Movie
+from models import Movie, EMBEDDING_MODEL_NAME # Import the constant
 
 # --- New, Modular Component ---
 class EmbeddingGenerator:
     """
     A dedicated class to handle the generation of embeddings from a text dataset.
     """
-    def __init__(self, model_name='sentence-transformers/all-mpnet-base-v2'):
+    def __init__(self, model_name=EMBEDDING_MODEL_NAME): # Use the imported constant
         self.model_name = model_name
         self.embedding_model = None
 
