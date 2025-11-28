@@ -220,3 +220,4 @@ ml-32m/
 *.ckpt
 tb_logs/
 temp_f
+*.html

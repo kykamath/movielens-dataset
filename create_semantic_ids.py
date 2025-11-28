@@ -5,9 +5,12 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from residual_quantized_vae import ResidualQuantizer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger # 1. Import the logger
+from pytorch_lightning.loggers import TensorBoardLogger
 from datasets import load_dataset
 from models import HUB_EMBEDDINGS_REPO_ID
+from huggingface_hub import login
+from dotenv import load_dotenv
+import os
 
 # --- 1. Hyperparameters ---
 EMBEDDING_DIM = 768
@@ -16,9 +19,10 @@ NUM_EMBEDDINGS = 1024
 COMMITMENT_COST = 0.25
 LEARNING_RATE = 1e-4
 BATCH_SIZE = 128
-EPOCHS = 500
+EPOCHS = 500 # Changed from 100 to 500
+HUB_MODEL_ID = "krishnakamath/rq-vae-movielens"
 
-# --- 2. The LightningModule (No changes needed here) ---
+# --- 2. The LightningModule ---
 class RQVAE(pl.LightningModule):
     def __init__(self, num_layers, num_embeddings, embedding_dim, commitment_cost, learning_rate):
         super().__init__()
@@ -59,7 +63,15 @@ class RQVAE(pl.LightningModule):
 
 # --- Main Execution Block ---
 def main():
-    # --- 3. Data Preparation ---
+    # --- 3. Authentication and Data Preparation ---
+    load_dotenv()
+    hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if hf_token:
+        print("Logging in to Hugging Face Hub...")
+        login(token=hf_token)
+    else:
+        print("Warning: HUGGING_FACE_HUB_TOKEN not found. Model will not be uploaded.")
+
     print(f"Preparing Data from Hugging Face Hub: {HUB_EMBEDDINGS_REPO_ID}")
     hub_dataset = load_dataset(HUB_EMBEDDINGS_REPO_ID, split="train")
     embeddings_list = [item['all_mpnet_base_v2_embedding'] for item in hub_dataset if item['all_mpnet_base_v2_embedding']]
@@ -87,7 +99,6 @@ def main():
         learning_rate=LEARNING_RATE
     )
 
-    # --- Configure Callbacks and Logger ---
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=5, verbose=True, mode='min')
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',
@@ -96,34 +107,54 @@ def main():
         save_top_k=1,
         mode='min',
     )
-    # 2. Instantiate the logger
     logger = TensorBoardLogger("tb_logs", name="rq_vae_model")
 
-    print("Initializing PyTorch Lightning Trainer with callbacks and logger...")
+    print("Initializing PyTorch Lightning Trainer...")
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
         accelerator="auto",
         callbacks=[early_stop_callback, checkpoint_callback],
-        logger=logger  # 3. Pass the logger to the Trainer
+        logger=logger
     )
 
     print("Starting Training...")
     trainer.fit(model, train_loader, val_loader)
 
     print("\nTraining Complete.")
-    print(f"Best model saved at: {checkpoint_callback.best_model_path}")
+    print(f"Best model saved locally at: {checkpoint_callback.best_model_path}")
 
-    # --- 5. Semantic ID Generation (Inference) ---
-    print("\nLoading best model from checkpoint to generate Semantic IDs...")
-    best_model = RQVAE.load_from_checkpoint(checkpoint_callback.best_model_path)
-    best_model.eval()
+    # --- 5. Upload Best Model to Hugging Face Hub ---
+    if hf_token and checkpoint_callback.best_model_path:
+        print(f"\nUploading best model from '{checkpoint_callback.best_model_path}' to Hugging Face Hub...")
+        
+        best_model = RQVAE.load_from_checkpoint(checkpoint_callback.best_model_path)
+        quantizer_model = best_model.quantizer
+        
+        # The push_to_hub method now exists thanks to the PyTorchModelHubMixin
+        quantizer_model.push_to_hub(
+            repo_id=HUB_MODEL_ID,
+            commit_message=f"Upload best model from epoch {best_model.current_epoch} with val_loss {checkpoint_callback.best_model_score:.4f}"
+        )
+        print(f"✅ Model successfully uploaded to {HUB_MODEL_ID}")
+    else:
+        print("\nSkipping model upload to Hugging Face Hub.")
+
+    # --- 6. Semantic ID Generation (Inference) ---
+    print("\nLoading best model to generate Semantic IDs...")
     
+    if checkpoint_callback.best_model_path:
+        inference_model = RQVAE.load_from_checkpoint(checkpoint_callback.best_model_path)
+    else:
+        print("No local checkpoint found. This should not happen if training ran.")
+        return
+
+    inference_model.eval()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    best_model = best_model.to(device)
+    inference_model = inference_model.to(device)
 
     all_semantic_ids = []
     with torch.no_grad():
-        _, ids, _ = best_model(full_embeddings_tensor.to(device))
+        _, ids, _ = inference_model(full_embeddings_tensor.to(device))
         all_semantic_ids = ids.cpu().numpy()
 
     print("\n--- Example Semantic IDs from Best Model ---")
