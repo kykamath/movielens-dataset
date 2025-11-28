@@ -218,3 +218,5 @@ ml-32m/
 *.yaml
 *.csv
 *.ckpt
+tb_logs/
+temp_f

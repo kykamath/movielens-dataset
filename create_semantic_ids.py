@@ -5,20 +5,20 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from residual_quantized_vae import ResidualQuantizer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import TensorBoardLogger # 1. Import the logger
 from datasets import load_dataset
-from models import HUB_EMBEDDINGS_REPO_ID # Import the repository ID
+from models import HUB_EMBEDDINGS_REPO_ID
 
 # --- 1. Hyperparameters ---
-# The embedding dimension must now match the pre-trained model's output
-EMBEDDING_DIM = 768  # Dimension of all-mpnet-base-v2
-NUM_LAYERS = 4       # Increased layers for a more complex embedding space
-NUM_EMBEDDINGS = 1024 # Increased codebook size for more expressiveness
+EMBEDDING_DIM = 768
+NUM_LAYERS = 4
+NUM_EMBEDDINGS = 1024
 COMMITMENT_COST = 0.25
-LEARNING_RATE = 1e-4 # Lower learning rate is often better for fine-tuning
-BATCH_SIZE = 128     # Increased batch size if GPU memory allows
-EPOCHS = 100         # Set a high number, EarlyStopping will find the optimal epoch
+LEARNING_RATE = 1e-4
+BATCH_SIZE = 128
+EPOCHS = 500
 
-# --- 2. The LightningModule: Now with Validation Logic ---
+# --- 2. The LightningModule (No changes needed here) ---
 class RQVAE(pl.LightningModule):
     def __init__(self, num_layers, num_embeddings, embedding_dim, commitment_cost, learning_rate):
         super().__init__()
@@ -34,7 +34,6 @@ class RQVAE(pl.LightningModule):
         return self.quantizer(z)
 
     def _common_step(self, batch, batch_idx):
-        """A common step for both training and validation."""
         batch_z, = batch
         z_quantized, _, vq_loss = self.quantizer(batch_z)
         reconstruction_loss = F.mse_loss(z_quantized, batch_z)
@@ -60,30 +59,17 @@ class RQVAE(pl.LightningModule):
 
 # --- Main Execution Block ---
 def main():
-    # --- 3. Data Preparation using real embeddings from Hugging Face Hub ---
+    # --- 3. Data Preparation ---
     print(f"Preparing Data from Hugging Face Hub: {HUB_EMBEDDINGS_REPO_ID}")
-    
-    # Load the dataset
     hub_dataset = load_dataset(HUB_EMBEDDINGS_REPO_ID, split="train")
-    
-    # Filter out entries that might not have an embedding
-    embeddings_list = [
-        item['all_mpnet_base_v2_embedding'] 
-        for item in hub_dataset 
-        if item['all_mpnet_base_v2_embedding']
-    ]
-    
+    embeddings_list = [item['all_mpnet_base_v2_embedding'] for item in hub_dataset if item['all_mpnet_base_v2_embedding']]
     if not embeddings_list:
         print("No embeddings found in the dataset. Exiting.")
         return
-        
-    # Convert to a single tensor
     full_embeddings_tensor = torch.tensor(embeddings_list, dtype=torch.float32)
     full_dataset = TensorDataset(full_embeddings_tensor)
-    
     print(f"Loaded {len(full_dataset)} embeddings of dimension {full_embeddings_tensor.shape[1]}")
 
-    # Split the data
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
@@ -91,7 +77,7 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=4, persistent_workers=True)
 
-    # --- 4. Training with Callbacks ---
+    # --- 4. Training with Callbacks and Logger ---
     print("Initializing RQ-VAE model...")
     model = RQVAE(
         num_layers=NUM_LAYERS,
@@ -101,7 +87,7 @@ def main():
         learning_rate=LEARNING_RATE
     )
 
-    # --- Configure Callbacks ---
+    # --- Configure Callbacks and Logger ---
     early_stop_callback = EarlyStopping(monitor='val_loss', patience=5, verbose=True, mode='min')
     checkpoint_callback = ModelCheckpoint(
         monitor='val_loss',
@@ -110,12 +96,15 @@ def main():
         save_top_k=1,
         mode='min',
     )
+    # 2. Instantiate the logger
+    logger = TensorBoardLogger("tb_logs", name="rq_vae_model")
 
-    print("Initializing PyTorch Lightning Trainer with callbacks...")
+    print("Initializing PyTorch Lightning Trainer with callbacks and logger...")
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
         accelerator="auto",
-        callbacks=[early_stop_callback, checkpoint_callback]
+        callbacks=[early_stop_callback, checkpoint_callback],
+        logger=logger  # 3. Pass the logger to the Trainer
     )
 
     print("Starting Training...")
@@ -126,7 +115,6 @@ def main():
 
     # --- 5. Semantic ID Generation (Inference) ---
     print("\nLoading best model from checkpoint to generate Semantic IDs...")
-    
     best_model = RQVAE.load_from_checkpoint(checkpoint_callback.best_model_path)
     best_model.eval()
     
@@ -138,9 +126,8 @@ def main():
         _, ids, _ = best_model(full_embeddings_tensor.to(device))
         all_semantic_ids = ids.cpu().numpy()
 
-    # Example Output
     print("\n--- Example Semantic IDs from Best Model ---")
-    for i in range(10): # Show more examples
+    for i in range(10):
         sid = all_semantic_ids[i]
         sid_str = " ".join([f"<T{j+1}:{token:04d}>" for j, token in enumerate(sid)])
         print(f"Movie {i + 1} SID: {sid_str}")
