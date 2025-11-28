@@ -3,12 +3,6 @@ from typing import List
 
 # --- Hugging Face Hub Repository IDs ---
 HUB_ENRICHED_REPO_ID = "krishnakamath/movielens-32m-movies-enriched"
-HUB_EMBEDDINGS_REPO_ID = "krishnakamath/movielens-32m-movies-enriched-embeddings"
-HUB_SIDS_DATASET_ID = "krishnakamath/movielens-32m-movies-enriched-with-SIDs"
-HUB_MODEL_ID = "krishnakamath/rq-vae-movielens"
-
-# --- Model Configuration ---
-EMBEDDING_MODEL_NAME = 'sentence-transformers/all-mpnet-base-v2'
 
 @dataclass
 class Movie:
