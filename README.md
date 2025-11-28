@@ -13,7 +13,8 @@ This enriched dataset is ideal for tasks that require more than just basic movie
 
 ## Dataset Structure
 
-The enriched dataset is available in [krishnakamath/movielens-32m-movies-enriched](https://huggingface.co/datasets/krishnakamath/movielens-32m-movies-enriched).
+The final enriched dataset is available on the Hugging Face Hub at:
+[krishnakamath/movielens-32m-movies-enriched](https://huggingface.co/datasets/krishnakamath/movielens-32m-movies-enriched)
 
 ### Data Fields
 
@@ -45,20 +46,24 @@ You can easily load this dataset using the Hugging Face `datasets` library.
 from datasets import load_dataset
 
 # Load the dataset from the Hugging Face Hub
-# Replace with your actual Hub repository ID
-dataset = load_dataset("krishnakamath/movielens-32m-enriched")
+dataset = load_dataset("krishnakamath/movielens-32m-movies-enriched")
 
 # Access the data
 print(dataset['train'][0])
 ```
 
-## Dataset Creation
+## Dataset Creation Workflow
 
-The dataset was generated using the `create_dataset.py` script in this repository. The script performs the following steps:
-1.  Reads the `movies.csv` from the MovieLens 32M dataset.
-2.  For each movie, it calls the OpenAI API (`gpt-3.5-turbo`) to generate the plot summary, director, and stars.
-3.  It saves the enriched data into the `movies_with_details.jsonl` file.
-4.  The script includes logic to resume processing and avoid re-enriching movies that are already present in the output file.
+The dataset was generated using the `create_movies_enriched_dataset.py` script in this repository. The script implements a robust, resumable workflow:
+
+1.  **Sync from Hub**: Before starting, the script downloads the latest version of the dataset from the [Hugging Face Hub](https://huggingface.co/datasets/krishnakamath/movielens-32m-movies-enriched) to a local `movies_with_details.jsonl` file. This ensures the process is always up-to-date. If the Hub dataset does not exist, it starts fresh.
+2.  **Identify Processed Movies**: It reads the local file to identify which movies have already been enriched, avoiding redundant API calls.
+3.  **Build Processing Queue**: It reads the original `ml-32m/movies.csv` and queues up only the movies that have not yet been processed.
+4.  **Batch Enrichment**: The script processes the movies in batches (e.g., 10 at a time), calling the OpenAI API to generate the plot summary, director, and stars for each movie in the batch.
+5.  **Append to Local File**: As each movie is enriched, it is appended to the `movies_with_details.jsonl` file.
+6.  **Upload to Hub**: After the processing run is complete, the script uploads the updated `movies_with_details.jsonl` file back to the Hugging Face Hub, making the latest version available.
+
+This workflow ensures that the enrichment process can be stopped and started without losing progress and that the central dataset on the Hub is always the source of truth.
 
 ## Citation
 
