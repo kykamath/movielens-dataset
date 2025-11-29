@@ -17,7 +17,7 @@ from enrichment_utils import (
 
 def main():
     # --- Configuration ---
-    MOVIES_TO_PROCESS = 2500  # Total number of movies we want to process in this crawl.
+    MOVIES_TO_PROCESS = 50000  # Total number of movies we want to process in this crawl.
     BATCH_SIZE = 10           # Number of movies we want to enrich in a single OpenAI API call.
     OUTPUT_FILE = ENRICHED_MOVIES_JSONL
     MOVIES_CSV_PATH = "ml-32m/movies.csv" # Path to the original MovieLens CSV
